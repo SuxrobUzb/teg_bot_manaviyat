@@ -304,7 +304,7 @@ async def send_welcome(message: types.Message, state: FSMContext):
 
     intro = "👋 Bu test o‘zingizni va haqiqiy xarakteringizni aniqlashga yordam beradi.\n" \
             "Test ikki qismdan iborat: *“O‘zingni ta’riflang”* va *“Aslida qanday insonsiz?”*\n" \
-            "Tayyorlovchi: xAI jamoasi.\n\nTest hozir boshlanadi!"
+            "Tayyorlovchi: RTTM jamoasi.\n\nTest hozir boshlanadi!"
     await message.reply(intro, parse_mode="Markdown")
     await message.delete()
 
