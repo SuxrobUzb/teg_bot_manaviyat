@@ -4,10 +4,8 @@ from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from collections import Counter
-import pandas as pd
-import os
 
 # Bot tokeni va admin ID
 API_TOKEN = '7601300058:AAGIUezJ7-JcD-BzlIAA_0npTVfruHi1YEk'
@@ -23,11 +21,9 @@ class TestState(StatesGroup):
     waiting_for_answer = State()
     finished = State()
 
-# Foydalanuvchilar ma'lumotlari uchun dictionary
+# Foydalanuvchilar va statistika uchun ma'lumotlar
 users_data = {}
-
-# Excel fayl nomi
-EXCEL_FILE = "test_results.xlsx"
+stats = {"O‘zingni ta’riflang": {}, "Aslida qanday insonsiz?": {}}
 
 # Test 1 savollari: “O‘zingni ta’riflang”
 test1_questions = [
@@ -228,79 +224,17 @@ def create_options_keyboard(test_type, question_index):
         ])
     return keyboard
 
-# Ma'lumotlarni Excel faylga saqlash
-def save_to_excel():
-    user_answers_data = []
-    stats_data = []
-    for user_id, user_info in users_data.items():
-        # User Answers varaq uchun
-        row_answers = {
-            "User_ID": user_id,
-            "Username": user_info["info"].get("username", "Noma'lum"),
-            "First_Name": user_info["info"].get("first_name", "Noma'lum"),
-            "Last_Name": user_info["info"].get("last_name", "Noma'lum"),
-            "Status": user_info.get("status", "not_started")
-        }
-        test1_answers = user_info["answers"].get("O‘zingni ta’riflang", [])
-        for i, ans in enumerate(test1_answers, 1):
-            row_answers[f"Test1_Q{i}"] = ans
-        test2_answers = user_info["answers"].get("Aslida qanday insonsiz?", [])
-        for i, ans in enumerate(test2_answers, 1):
-            row_answers[f"Test2_Q{i}"] = ans
-        user_answers_data.append(row_answers)
-
-        # Stats varaq uchun
-        row_stats = {
-            "User_ID": user_id,
-            "Username": user_info["info"].get("username", "Noma'lum"),
-            "First_Name": user_info["info"].get("first_name", "Noma'lum"),
-            "Last_Name": user_info["info"].get("last_name", "Noma'lum"),
-        }
-        test1_result = ",".join(sorted(user_info["top_answers"].get("O‘zingni ta’riflang", [])))
-        for combo in ["a", "b", "c", "d", "a,b", "a,c", "a,d", "b,c", "b,d", "c,d", "a,b,c", "a,b,d", "a,c,d", "b,c,d", "a,b,c,d"]:
-            row_stats[f"Test1_{combo}"] = 1 if test1_result == combo else 0
-        test2_result = ",".join(sorted(user_info["top_answers"].get("Aslida qanday insonsiz?", [])))
-        for combo in ["a", "b", "c", "d", "a,b", "a,c", "a,d", "b,c", "b,d", "c,d", "a,b,c", "a,b,d", "a,c,d", "b,c,d", "a,b,c,d"]:
-            row_stats[f"Test2_{combo}"] = 1 if test2_result == combo else 0
-        stats_data.append(row_stats)
-
-    with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl') as writer:
-        pd.DataFrame(user_answers_data).to_excel(writer, sheet_name="User_Answers", index=False)
-        pd.DataFrame(stats_data).to_excel(writer, sheet_name="Stats", index=False)
-
 # Start komandasi
 @dp.message(Command("start"))
 async def send_welcome(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    if user_id in users_data:
-        status = users_data[user_id].get("status", "not_started")
-        if status == "finished":
-            results = users_data[user_id]["results"]
-            response = "📊 *Sizning natijalaringiz:*\n\n"
-            response += f"**“O‘zingni ta’riflang”:**\n{results['O‘zingni ta’riflang']}\n\n"
-            response += f"**“Aslida qanday insonsiz?”:**\n{results['Aslida qanday insonsiz?']}"
-            await message.reply(response, parse_mode="Markdown")
-            return
-        elif status == "test1_finished":
-            await state.set_state(TestState.waiting_for_answer)
-            await state.update_data(test_type="Aslida qanday insonsiz?", question_index=0, last_message_id=None)
-            question = test2_questions[0]
-            options_text = "\n".join([f"**{key.upper()}**: {value}" for key, value in question["options"].items()])
-            keyboard = create_options_keyboard("Aslida qanday insonsiz?", 0)
-            msg = await bot.send_message(
-                message.chat.id,
-                f"📝 *“Aslida qanday insonsiz?”*\n\n{question['question']}\n\n{options_text}",
-                reply_markup=keyboard,
-                parse_mode="Markdown"
-            )
-            await state.update_data(last_message_id=msg.message_id)
-            users_data[user_id]["status"] = "test2_in_progress"
-            save_to_excel()
-            await message.delete()
-            return
-        elif status in ["test1_in_progress", "test2_in_progress"]:
-            await message.reply("Siz allaqachon testni boshlagansiz. Iltimos, davom eting!")
-            return
+    if user_id in users_data and users_data[user_id]["results"].get("Aslida qanday insonsiz?"):
+        results = users_data[user_id]["results"]
+        response = "📊 *Sizning natijalaringiz:*\n\n"
+        response += f"**“O‘zingni ta’riflang”:**\n{results['O‘zingni ta’riflang']}\n\n"
+        response += f"**“Aslida qanday insonsiz?”:**\n{results['Aslida qanday insonsiz?']}"
+        await message.reply(response, parse_mode="Markdown")
+        return
 
     intro = "👋 Bu test o‘zingizni va haqiqiy xarakteringizni aniqlashga yordam beradi.\n" \
             "Test ikki qismdan iborat: *“O‘zingni ta’riflang”* va *“Aslida qanday insonsiz?”*\n" \
@@ -318,8 +252,7 @@ async def send_welcome(message: types.Message, state: FSMContext):
             },
             "answers": {"O‘zingni ta’riflang": [], "Aslida qanday insonsiz?": []},
             "results": {},
-            "top_answers": {"O‘zingni ta’riflang": [], "Aslida qanday insonsiz?": []},
-            "status": "test1_in_progress"
+            "top_answers": {"O‘zingni ta’riflang": [], "Aslida qanday insonsiz?": []}
         }
 
     await state.set_state(TestState.waiting_for_answer)
@@ -334,7 +267,6 @@ async def send_welcome(message: types.Message, state: FSMContext):
         parse_mode="Markdown"
     )
     await state.update_data(last_message_id=msg.message_id)
-    save_to_excel()
 
 # Inline tugma bosilganda javobni qabul qilish
 @dp.callback_query(TestState.waiting_for_answer)
@@ -372,11 +304,7 @@ async def process_callback_answer(callback: types.CallbackQuery, state: FSMConte
         result, top_answers = calculate_result(users_data[user_id]["answers"][test_type], test_type)
         users_data[user_id]["results"][test_type] = result
         users_data[user_id]["top_answers"][test_type] = top_answers
-        if test_type == "O‘zingni ta’riflang":
-            users_data[user_id]["status"] = "test1_finished"
-        else:
-            users_data[user_id]["status"] = "finished"
-        save_to_excel()
+        stats[test_type][user_id] = ",".join(sorted(top_answers))  # Natija kombinatsiyasini saqlash
         await bot.send_message(
             callback.message.chat.id,
             f"✅ *{test_type} tugadi!*\n\nNatijangiz:\n{result}",
@@ -396,10 +324,14 @@ async def process_callback_answer(callback: types.CallbackQuery, state: FSMConte
                 parse_mode="Markdown"
             )
             await state.update_data(last_message_id=msg.message_id)
-            users_data[user_id]["status"] = "test2_in_progress"
-            save_to_excel()
         else:
             await state.set_state(TestState.finished)
+            await asyncio.sleep(2)
+            results = users_data[user_id]["results"]
+            response = "📊 *Sizning natijalaringiz:*\n\n"
+            response += f"**“O‘zingni ta’riflang”:**\n{results['O‘zingni ta’riflang']}\n\n"
+            response += f"**“Aslida qanday insonsiz?”:**\n{results['Aslida qanday insonsiz?']}"
+            await bot.send_message(callback.message.chat.id, response, parse_mode="Markdown")
 
     await callback.answer()
 
@@ -411,16 +343,16 @@ def calculate_result(answers, test_type):
 
     descriptions = {
         "O‘zingni ta’riflang": {
-            "a": "Siz o‘zingizni kuchli, ijtimoiy va o‘zgarishga tayyor deb bilasiz.",
-            "b": "Siz ehtiyotkor va o‘zgarishga tayyor bo‘lsangiz-da, ba’zida noaniqlik mavjud.",
-            "c": "Siz o‘zgarishga ochiq va rivojlanishga tayyor insansiz.",
-            "d": "Siz o‘zgarishlarni ehtiyotkorlik bilan ko‘rib chiqasiz."
+            "a": "Siz o‘zingizni kuchli, ijtimoiy va o‘zgarishga tayyor deb bilasiz. Siz hayotda muvaffaqiyatga erishgan va o‘z yo‘lingizni topgan insansiz.",
+            "b": "Siz ehtiyotkor va o‘zgarishga tayyor bo‘lsangiz-da, ba’zida noaniqlik va shubhalar mavjud. Siz o‘zgarishlarga qarshi turishingiz mumkin, lekin yangi imkoniyatlarni sinab ko‘rishga tayyor bo‘lasiz.",
+            "c": "Siz o‘zgarishga ochiq va rivojlanishga tayyor insansiz, lekin ba’zan o‘zingizga ishonchni topish uchun ko‘proq vaqt va qo‘llab-quvvatlash kerak deb his qilasiz.",
+            "d": "Siz o‘zgarishlarni ehtiyotkorlik bilan ko‘rib chiqasiz va o‘zingizga ko‘proq ishonch hosil qilishga intilasiz."
         },
         "Aslida qanday insonsiz?": {
-            "a": "Siz ochiq, ijtimoiy va boshqalar bilan tezda aloqada bo‘lishni yaxshi ko‘rasiz.",
-            "b": "Siz ehtiyotkor va o‘zgarishlarga tayyor bo‘lsangiz ham, ba’zan noaniqlikni his qilasiz.",
-            "c": "Siz o‘z fikrlaringizga sodiq va ba’zan o‘zingizni cheklab qo‘yishingiz mumkin.",
-            "d": "Siz ba’zan o‘z hissiyotlaringizni yashirasiz va boshqalardan uzoqroq bo‘lishni afzal ko‘rasiz."
+            "a": "Siz ochiq, ijtimoiy va boshqalar bilan tezda o‘zaro aloqada bo‘lishni yaxshi ko‘radigan odam sifatidasiz. Siz yangi tajribalarni va o‘zgarishlarni kutasiz.",
+            "b": "Siz ehtiyotkor va o‘zgarishlarga tayyor bo‘lsangiz ham, ba’zan noaniqlikni his qilasiz. Boshqalar bilan yaxshi munosabatlar o‘rnatishga harakat qilasiz.",
+            "c": "Siz o‘z fikrlaringizga sodiq va ba’zan o‘zingizni boshqalar bilan cheklab qo‘yishingiz mumkin. Siz o‘zingizni rivojlantirishga intilasiz, ammo ba’zan o‘zgarishlarga qarshi turasiz.",
+            "d": "Siz ba’zan o‘z hissiyotlaringizni yashirasiz va boshqalardan uzoqroq bo‘lishni afzal ko‘rasiz. O‘zgarishlarni qabul qilishda ba’zan qiynalasiz."
         }
     }
 
@@ -437,89 +369,28 @@ async def show_stats(message: types.Message):
         await message.reply("Bu buyruq faqat admin uchun!")
         return
 
-    if not os.path.exists(EXCEL_FILE):
-        await message.reply("Hozircha ma'lumot yo‘q!")
-        return
-
-    df_stats = pd.read_excel(EXCEL_FILE, sheet_name="Stats")
-    if df_stats.empty:
-        await message.reply("Hozircha ma'lumot yo‘q!")
-        return
-
     response = "📈 *Umumiy statistika:*\n\n"
-    total_users = len(df_stats)
-
+    
+    # “O‘zingni ta’riflang” uchun natija statistikasi
     response += "**“O‘zingni ta’riflang”:**\n"
-    test1_cols = [col for col in df_stats.columns if col.startswith("Test1_")]
-    for col in test1_cols:
-        count = df_stats[col].sum()
-        if count > 0:
-            percentage = (count / total_users) * 100
-            combo = col.replace("Test1_", "")
-            response += f"{combo}: {count} ta ({percentage:.1f}%)\n"
+    test1_results = Counter(stats["O‘zingni ta’riflang"].values())
+    total_users = len(users_data)
+    for result_combo, count in test1_results.items():
+        percentage = (count / total_users) * 100 if total_users > 0 else 0
+        response += f"{result_combo}: {count} ta ({percentage:.1f}%)\n"
 
+    # “Aslida qanday insonsiz?” uchun natija statistikasi
     response += "\n**“Aslida qanday insonsiz?”:**\n"
-    test2_cols = [col for col in df_stats.columns if col.startswith("Test2_")]
-    for col in test2_cols:
-        count = df_stats[col].sum()
-        if count > 0:
-            percentage = (count / total_users) * 100
-            combo = col.replace("Test2_", "")
-            response += f"{combo}: {count} ta ({percentage:.1f}%)\n"
+    test2_results = Counter(stats["Aslida qanday insonsiz?"].values())
+    for result_combo, count in test2_results.items():
+        percentage = (count / total_users) * 100 if total_users > 0 else 0
+        response += f"{result_combo}: {count} ta ({percentage:.1f}%)\n"
 
     response += f"\n**Jami foydalanuvchilar:** {total_users}"
     await message.reply(response, parse_mode="Markdown")
 
-# Admin uchun faylni yuklab olish
-@dp.message(Command("download"))
-async def download_excel(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.reply("Bu buyruq faqat admin uchun!")
-        return
-
-    if not os.path.exists(EXCEL_FILE):
-        await message.reply("Hozircha ma'lumot yo‘q, Excel fayl mavjud emas!")
-        return
-
-    file = FSInputFile(EXCEL_FILE)
-    await bot.send_document(message.chat.id, file, caption="📊 Test natijalari Excel faylda")
-
 # Botni ishga tushirish
 async def main():
-    if os.path.exists(EXCEL_FILE):
-        df_answers = pd.read_excel(EXCEL_FILE, sheet_name="User_Answers")
-        df_stats = pd.read_excel(EXCEL_FILE, sheet_name="Stats")
-        for _, row in df_answers.iterrows():
-            user_id = row["User_ID"]
-            users_data[user_id] = {
-                "info": {
-                    "id": user_id,
-                    "username": row["Username"],
-                    "first_name": row["First_Name"],
-                    "last_name": row["Last_Name"]
-                },
-                "answers": {
-                    "O‘zingni ta’riflang": [row[f"Test1_Q{i}"] for i in range(1, 11) if f"Test1_Q{i}" in row and pd.notna(row[f"Test1_Q{i}"])],
-                    "Aslida qanday insonsiz?": [row[f"Test2_Q{i}"] for i in range(1, 11) if f"Test2_Q{i}" in row and pd.notna(row[f"Test2_Q{i}"])]
-                },
-                "results": {},
-                "top_answers": {
-                    "O‘zingni ta’riflang": [],
-                    "Aslida qanday insonsiz?": []
-                },
-                "status": row["Status"]
-            }
-        for _, row in df_stats.iterrows():
-            user_id = row["User_ID"]
-            if user_id in users_data:
-                users_data[user_id]["top_answers"]["O‘zingni ta’riflang"] = [col.replace("Test1_", "") for col in df_stats.columns if col.startswith("Test1_") and row[col] == 1]
-                users_data[user_id]["top_answers"]["Aslida qanday insonsiz?"] = [col.replace("Test2_", "") for col in df_stats.columns if col.startswith("Test2_") and row[col] == 1]
-                if users_data[user_id]["answers"]["O‘zingni ta’riflang"]:
-                    result, _ = calculate_result(users_data[user_id]["answers"]["O‘zingni ta’riflang"], "O‘zingni ta’riflang")
-                    users_data[user_id]["results"]["O‘zingni ta’riflang"] = result
-                if users_data[user_id]["answers"]["Aslida qanday insonsiz?"]:
-                    result, _ = calculate_result(users_data[user_id]["answers"]["Aslida qanday insonsiz?"], "Aslida qanday insonsiz?")
-                    users_data[user_id]["results"]["Aslida qanday insonsiz?"] = result
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
